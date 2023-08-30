@@ -17,15 +17,15 @@
     COPY --from=test-stage /build.txt /build.txt
     CMD cat /build.txt
     ```
-  * 멀티 스테이지 빌드
+  * 위 도커파일은 멀티 스테이지 빌드이다.
   * 각 빌드 단계는 `FROM` 인스트럭션으로 시작한다
   * `AS`로 alias 설정할 수 있다
   * 최종 단계의 산출물은 마지막 단계의 내용물을 담은 도커 이미지
-  * 각 단계는 독립적이지만 앞 단계에서 파일 복사해올 수 있다
+  * 각 단계는 기본적으로 독립적이지만, 앞 단계에서 파일 복사해올 수 있다
   * `RUN`: 빌드 중 컨테이너 안에서 명령 실행한 후 결과를 이미지 레이어에 저장
     * `FROM`으로 지정한 베이스 이미지에서 실행 가능해야
   * 각 단계는 격리되어 있다.
-  * 마지막 산출물은 명시적으로 복사된 것만 포함할 수 있다
+  * 마지막 산출물에는 명시적으로 복사된 것만 포함된다.
   * 하나라도 실패하면 전체 빌드 실패
 * 이러한 방식으로 자바 maven 빌드, 빌드 결과물 복사 및 테스트 수행 등을 한 번에 할 수 있다
 * 즉 도커만 갖춰지면 어디서든 애플리케이션을 빌드/실행할 수 있다
@@ -69,4 +69,33 @@
   * --network 로 네트워크 지정할 수 있다
 * 최종 생성된 이미지에 빌드 도구는 포함되지 않는다 -> 효율적
   * 마지막 단계 콘텐츠만 이미지에 포함된다.
-  * 포함시키고 싶으면 앞 단계에서 복사해와
+  * 포함시키고 싶으면 앞 단계에서 복사해와야 한다.
+
+## 3. Node.js 빌드 예제
+* Node.js는 인터프리터 언어라서 자바와 달리 별도의 컴파일 절차 필요가 없다
+* 자바스크립트로 구현됨
+* 예제
+  ```dockerfile
+  FROM diamol/node AS builder
+  
+  WORKDIR /src
+  COPY src/package.json .
+  
+  RUN npm install
+  
+  # app
+  FROM diamol/node
+  
+  EXPOSE 80
+  CMD ["node", "server.js"]
+  
+  WORKDIR /app
+  COPY --from=builder /src/node_modules/ /app/node_modules/
+  COPY src/ .
+  ```
+  * `diamol/node`는 npm과 node가 설치된 이미지
+  * 의문: node server.js 커맨드가 왜 실행되지
+* `docker image build -t access-log .`
+* `docker container run --name accesslog -d -p 801:80 --network nat access-log`
+* node 10.16으로 구동되지만, 이러한 사실에 신경쓸 필요가 없다는 것이 시사점이다
+* 
