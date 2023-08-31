@@ -97,5 +97,85 @@
   * 의문: node server.js 커맨드가 왜 실행되지
 * `docker image build -t access-log .`
 * `docker container run --name accesslog -d -p 801:80 --network nat access-log`
-* node 10.16으로 구동되지만, 이러한 사실에 신경쓸 필요가 없다는 것이 시사점이다
-* 
+* node 10.16으로 구동되지만, 이러한 사실에 신경쓸 필요가 없다는 것이 주목할 지점이다.
+
+## 4. Go 예제
+* Go: native binary로 컴파일되는 크로스 플랫폼 언어
+  * 별도 런타임이 필요하지 않다는 장점
+  * 도커도 Go로 구현됨
+* 예제
+  ```dockerfile
+  FROM diamol/golang AS builder
+  
+  COPY main.go .
+  RUN go build -o /server
+  
+  # app
+  FROM diamol/base
+  
+  ENV IMAGE_API_URL="http://iotd/image" \
+  ACCESS_API_URL="http://accesslog/access-log"
+  CMD ["/web/server"]
+  
+  WORKDIR web
+  COPY index.html .
+  COPY --from=builder /server .
+  RUN chmod +x server
+  ```
+  * 빌드 단계: go 컴파일
+  * 애플리케이션 단계: 바이너리와 html 파일을 복사
+* `docker image build -t image-gallery`
+* `docker image ls -f reference=diamol/golang -f reference=image-gallery`
+  * `-f` 태그로 결과에 필터 걸 수 있다
+  * diamol/golang 이미지보다 빌드된 go 애플리케이션 포함한 이미지가 크기가 더 작다
+* `docker container run -d -p 802:80 --network nat image-gallery`
+* 지금까지 한 것
+  * Go로 구현된 웹 애플리케이션이 Java API를 호출하여 이미지를 얻어온 다음 Node.js API에 로그를 남긴다
+  * 이때까지 각 프로그램의 소스코드와 도커만 필요했으며 다른 도구는 필요없었다
+
+## 5. 멀티 스테이지 도커파일
+* 장점
+  * 표준화: os, 환경과 상관없이 빌드에 성공할 수 있음
+  * 성능 향상: 레이어 캐시로 인해 소요 시간 단축
+  * 공간 효율: 빌드 도구가 최종 산출물에 포함되지 않게 하여 용량 줄일 수 있음 (curl 등)
+
+## 6. 연습 문제
+다음 Dockerfile을 최적화하라.
+```dockerfile
+FROM diamol/golang
+
+WORKDIR web
+COPY index.html .
+COPY main.go .
+
+RUN go build -o /web/server
+RUN chmod +x /web/server
+
+CMD ["/web/server"]
+ENV USER=sixeyed
+EXPOSE 80
+```
+
+* `docker image build -t ch04-before` -> 736MB
+* 최적화 후:
+
+
+```dockerfile
+FROM diamol/golang AS builder
+COPY main.go .
+RUN go build -o /server
+
+FROM diamol/base
+ENV USER=sixeyed
+WORKDIR web
+COPY --from=builder /server .
+CMD ["/web/server"]
+EXPOSE 80
+RUN chmod +x /web/server
+
+COPY index.html .
+```
+* 멀티 스테이지로 나누어서 앞 단계에서 빌드를 모두 진행하고, 빌드 도구는 최종 산출물에 포함되지 않도록 한다
+* `COPY index.html . ` 부분을 맨 밑으로 내려서 수정해도 한 단계만 재실행되도록 한다
+
+
