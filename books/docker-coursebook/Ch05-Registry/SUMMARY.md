@@ -39,3 +39,34 @@
 * 소규모 팀에서는 충분히 유용함
 * 로컬 레지스트리를 허용하려면 insecure-registries를 설정에 추가해주어야 한다
 * `docker image push localhost:5000/gallery/ui:v1`
+
+## 4. 효율적인 이미지 태그
+* 기본적으로 `major.minor.patch` 형식을 따른다
+  * `docker image tag image-gallery localhost:5000/gallery/ui:2.1`
+* 태그는 여러 개가 연결 가능하다. 즉 별명 붙이기 가능하다
+  * `latest` 태그는 릴리스에 따라 계속 옮겨다닌다
+  * `3` `3.0` 등은 `3.0.12`의 별칭
+
+## 5. 골든 이미지
+* 검증된 퍼블리셔: MS, 오라클, IBM 등 대기업
+* 공식 이미지: 오픈소스 소프트웨어. 도커와 개발주체가 함께 관리
+* 골든 이미지: 공식 이미지 기반으로 커스터마이즈한 이미지. 신뢰도와 커스터마이징 두 마리 토끼
+* 골든 이미지를 만드는 도커파일 예시
+  ```dockerfile
+  FROM mcr.microsoft.com/dotnet/core/sdk:3.0.100
+  
+  LABEL framework="dotnet"
+  LABEL version="3.0"
+  LABEL description=".NET Core 3.0 SDK"
+  LABEL owner="golden-images@sixeyed.com"
+  
+  WORKDIR src
+  COPY global.json .
+  ```
+  * `LABEL` 인스트럭션으로 이미지 메타데이터 관리
+
+
+
+
+
+
