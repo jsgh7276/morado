@@ -1,16 +1,17 @@
 # Ch06. Storage
 
 ## 1. 컨테이너 데이터가 사라지는 이유
-* stateless 애플리케이션이면 필요없겠지만, 대부분은 스토리지가 필요함
+* stateless 애플리케이션이면 필요 없겠지만, 대부분의 애플리케이션은 stateful하며 스토리지가 필요함
 * 모든 컨테이너는 독립된 파일 시스템을 가지며 서로 영향 주지 않는다
 * 랜덤 넘버를 파일 시스템에 기록하는 컨테이너 2개
-  ```dockerfile
+  ```shell
     docker container run --name rn1 diamol/ch06-random-number
     docker container run --name rn2 diamol/ch06-random-number
   ```
+  * 같은 이미지로부터 실행되었으나 파일 시스템의 내용은 서로 다르다
   * 컨테이너 실행은 종료돼도 파일 시스템은 삭제되지 않는다
 * `docker container cp`로 컨테이너, 로컬 컴퓨터간 파일 복사 가능
-  ```dockerfile
+  ```shell
   docker container cp rn1:/random/number.txt number1.txt
   docker container cp rn2:/random/number.txt number2.txt
   ```
@@ -21,15 +22,66 @@
 * 기록 가능 레이어에서 이미지 레이어의 파일을 수정할 수도 있다.
   * 기록 가능 레이어에 복사해온 이후 파일을 수정한다.
   * 수정하는 예제
-    ```dockerfile
+    ```shell
     docker container run --name f1 diamol/ch06-file-display
-    echo “http://eltonstoneman.com” > url.txt
+    ## 위 커맨드에서는 이미지 레이어에 포함된 input.txt가 출력된다.
+    echo "http://eltonstoneman.com" > url.txt
     docker container cp url.txt f1:/input.txt
+    ## 컨테이너 레이어가 이미지 레이어의 input.txt를 덮어쓸 수 있다.
     docker container start --attach f1
+    ## 바뀐 내용이 출력된다.
     ```
   * 마찬가지로 다른 컨테이너/이미지에는 영향 미치지 않는다
   * 해당 컨테이너 사라지면 변경도 사라짐
 * 그렇다면 어떻게 stateful한 애플리케이션을 실행할 수 있는가?
   * 컨테이너는 밥 먹듯이 사라지는데
-  * 도커 볼륨과 마운트 이용
-  * 
+  * 도커 볼륨과 마운트를 이용하면 된다.
+
+## 2. 볼륨
+* 볼륨: 스토리지를 다루는 단위
+  * 일종의 USB 메모리 비슷한 것
+  * 별도로 존재하며 컨테이너와는 별도 생애주기
+  * 컨테이너에 연결할 수 있다.
+* 사용하는 방법
+  * 수동으로 직접 생성
+  * or Dockerfile에서 VOLUME 인스트럭션 사용
+    * `VOLUME <target-directory>` 형식
+* 볼륨으로 지정된 디렉토리는 볼륨에 영구적으로 저장된다.
+  ```shell
+  docker container run --name todo1 -d -p 8010:80 diamol/ch06-todo-list
+  ## Dockerfile 스크립트에 의해 볼륨이 생성되고, 컨테이너에 연결된다
+  docker container inspect --format '{{.Mounts}}' todo1
+  ## 볼륨 ID와 호스트 컴퓨터상 경로, 컨테이너 파일 시스템상 경로가 출력됨
+  docker volume ls
+  ## 볼륨은 도커에서 이미지, 컨테이너와 동급인 요소이다.
+  ```
+* 해당 이미지로 컨테이너를 새로 생성하면 새로운 볼륨이 생성된다.
+  * 하지만 기존의 볼륨을 연결시킬 수도 있다.
+  ```shell
+  # 이 컨테이너를 실행하면 볼륨을 생성한다
+  docker container run --name todo2 -d diamol/ch06-todo-list
+  docker container exec todo2 ls /data  ## 비어있다.
+  
+  # 이 컨테이너는 todo1의 볼륨을 공유한다
+  docker container run -d --name t3 --volumes-from todo1 diamol/ch06-todo-list
+  docker container exec t3 ls /data  ## DB가 확인된다.
+  ```
+* 위의 예시에서는 이미지의 스크립트에서 볼륨을 생성했지만, 따로 볼륨을 생성 후 명시적으로 관리하는 것이 낫다.
+  ```shell
+  ## 볼륨 생성
+  docker volume create todo-list
+  
+  ## 생성된 볼륨을 연결하여 실행
+  docker container run -d -p 8011:80 -v todo-list:$target --name todo-v1 diamol/ch06-todo-list
+  
+  ## 기존 컨테이너 삭제
+  docker container rm -f todo-v1
+  
+  ## 새로운 컨테이너 실행, 데이터가 유지되는 것을 볼 수 있다.
+  docker container run -d -p 8011:80 -v todo-list:$target --name todo-v2 diamol/ch06-todo-list:v2
+  ```
+  * 볼륨은 생애주기가 별도라는 것을 확인할 수 있다.
+  * 앱이 업데이트 되더라도 데이터 유지 가능
+* 도커파일 인스트럭션으로 사용할 경우 식별자가 무작위이므로 유의해야 함 (기억해놓아야 함)
+  * 볼륨을 따로 명시적으로 생성하는 것이 좋다
+* 컨테이너 실행시 --volume 플래그로 명시하면 이미지에 볼륨이 정의되어 있더라도 생성되지는 않는다.
