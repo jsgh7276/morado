@@ -66,22 +66,65 @@
   docker container run -d --name t3 --volumes-from todo1 diamol/ch06-todo-list
   docker container exec t3 ls /data  ## DB가 확인된다.
   ```
-* 위의 예시에서는 이미지의 스크립트에서 볼륨을 생성했지만, 따로 볼륨을 생성 후 명시적으로 관리하는 것이 낫다.
+* 위의 예시에서는 이미지의 스크립트에서 볼륨을 생성했지만, 따로 볼륨을 생성 후 명시적으로 관리하는 것이 여러 면에서 낫다.
   ```shell
   ## 볼륨 생성
   docker volume create todo-list
   
   ## 생성된 볼륨을 연결하여 실행
-  docker container run -d -p 8011:80 -v todo-list:$target --name todo-v1 diamol/ch06-todo-list
+  docker container run -d -p 8011:80 -v todo-list:/data --name todo-v1 diamol/ch06-todo-list
   
   ## 기존 컨테이너 삭제
   docker container rm -f todo-v1
   
   ## 새로운 컨테이너 실행, 데이터가 유지되는 것을 볼 수 있다.
-  docker container run -d -p 8011:80 -v todo-list:$target --name todo-v2 diamol/ch06-todo-list:v2
+  docker container run -d -p 8011:80 -v todo-list:/data --name todo-v2 diamol/ch06-todo-list:v2
   ```
   * 볼륨은 생애주기가 별도라는 것을 확인할 수 있다.
   * 앱이 업데이트 되더라도 데이터 유지 가능
 * 도커파일 인스트럭션으로 사용할 경우 식별자가 무작위이므로 유의해야 함 (기억해놓아야 함)
   * 볼륨을 따로 명시적으로 생성하는 것이 좋다
 * 컨테이너 실행시 --volume 플래그로 명시하면 이미지에 볼륨이 정의되어 있더라도 생성되지는 않는다.
+
+
+## 3. 파일 시스템 마운트
+* 볼륨의 장점: 컨테이너와 생애주기를 분리하면서도 도커 사용 방식대로 스토리지를 다룰 수 있다
+* 바인드 마운트: 보다 직접적으로 호스트 스토리지를 연결
+  * 파일 시스템 디렉토리를 컨테이너 파일 시스템의 디렉토리로 만든다
+  * 호스트 <-> 컨테이너 간 파일 직접 접근이 가능해진다
+  * `docker container run --mount type=bind,source=./dockerstudy-db,target=/data
+    -d -p 8012:80 diamol/ch06-todo-list`
+  * /dockerstudy-db 호스트 디렉토리가 컨테이너에 /data 로 매핑되었다
+* 바인드 마운트는 양방향이다.
+* 호스트 파일에 접근해야 하므로 도커파일 상에서 권한을 상승시켜주어야 한다.
+* 마운트된 디렉토리를 통해 앱 설정을 조정하는 예시
+  ```shell
+  docker container run --name todo-configured -d -p 8013:80 --mount \
+    type=bind,source=./config,target=/app/config,readonly diamol/ch06-todo-list
+  curl http://localhost:8013
+  
+  ## 로그 확인하면 디버그 로그가 다량 출력된 것을 볼 수 있음 (설정이 바뀜)
+  docker container logs todo-configured
+  ```
+* 마찬가지 방법으로 네트워크 드라이브도 마운트 가능하다
+
+## 4. 마운트의 한계
+* 이미지 레이어에 이미 존재하는 경로의 파일을 똑같이 마운트하는 경우, 이미지 레이어 파일에는 접근 불가능해진다
+  ```shell
+  ## 아래 컨테이너는 /init 경로의 파일명들을 출력한다.
+  docker container run diamol/ch06-bind-mount
+  
+  ## 마운트한 경우 호스트의 디렉토리로 대체되며 기존 (이미지 레이어에 있던) 파일에는 접근할 수 없다
+  docker container run --mount type=bind,source=./new,target=/init diamol/ch06-bind-mount
+  ```
+* 호스트 컴퓨터의 단일 파일을 컨테이너에 이미 있는 디렉토리로 마운트하는 경우, 윈도우 / 리눅스 동작이 다르다
+  * 리눅스에서는 둘 다 보이지만, 윈도우에서는 그렇지 않다
+  ```shell
+  docker container run --mount type=bind,source=./new/123.txt,target=/init/123.txt diamol/ch06-bind-mount
+  ## 리눅스에서는 컨테이너 파일, 마운트한 파일이 모두 보인다.
+  ## 윈도우에서는 단일 파일 마운트를 지원하지 않는다.
+  ```
+* 분산 파일 시스템을 마운트하는 경우 
+  * 해당 시스템에서 지원하지 않는 기능이 있을 수 있다.
+  * 예를 들어 azure files를 마운트한 경우, 파일 링크 생성을 지원하지 않으므로 에러 발생
+  * 느려질 우려도 높다
