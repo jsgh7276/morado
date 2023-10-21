@@ -147,7 +147,7 @@
   docker container run -d -p 8011:80 --name todo-lab --mount \
    type=bind,source=./dockerstudy-lab-db,target=/init-data diamol/ch06-lab
   ```
-* 참고: 모든 컨테이너 삭제는
-`docker rm-f $(docker ps -aq)`
+* 참고: 모든 컨테이너 삭제는 `docker rm-f $(docker ps -aq)`
+* 책에서는 /app/config를 바꿔야 한다고 한다
 
 
