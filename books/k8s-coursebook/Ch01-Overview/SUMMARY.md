@@ -24,3 +24,42 @@
 * 쿠버네티스는 방대한 주제이다.
 * CKAD의 80%, CKA의 50%를 커버한다
 * 컨테이너 기술 지식이 어느 정도 있는 k8s 초보
+
+## 3. 환경 세팅
+* 먼저 도커 데스크톱 설치
+* 설정 - Kubernetes - Enable Kubernetes 체크한 후 재시작한다.
+  * 도커 데스크톱이 리눅스 가성 머신 위에서 쿠버네티스를 실행해준다
+  * `Reset Kubernetes Cluster` 버튼으로 리셋할 수 있다.
+* 설정은 `~/kube`에 저장되는듯. 뭔가 꼬였다면 kubernetes cluster를 docker desktop 상에서 재시작해주자
+  * 사내 클러스터용 설정파일은 `~/.kube-backup`에 설정해주었음
+  * `Reset Kubernetes Cluster` 버튼 누르면 `~/.kube`가 새로 생긴다.
+  * 디폴트 설정파일
+    ```
+    > k config view
+    apiVersion: v1
+    clusters:
+    - cluster:
+      certificate-authority-data: DATA+OMITTED
+      server: https://127.0.0.1:6443
+      name: docker-desktop
+      contexts:
+    - context:
+      cluster: docker-desktop
+      user: docker-desktop
+      name: docker-desktop
+      current-context: docker-desktop
+      kind: Config
+      preferences: {}
+      users:
+    - name: docker-desktop
+      user:
+      client-certificate-data: REDACTED
+      client-key-data: REDACTED
+    ```
+  * 다음 커맨드로 클러스터 정상 동작 확인. 아래와 비슷하게 나오면 정상이다.
+    ```
+    > k get nodes
+    NAME             STATUS   ROLES           AGE     VERSION
+    docker-desktop   Ready    control-plane   7m56s   v1.27.2
+    ```
+  * k get pod, k run 등의 커맨드 정상 실행 확인
