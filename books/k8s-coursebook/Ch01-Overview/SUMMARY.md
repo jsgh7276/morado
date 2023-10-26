@@ -31,7 +31,7 @@
   * 도커 데스크톱이 리눅스 가성 머신 위에서 쿠버네티스를 실행해준다
   * `Reset Kubernetes Cluster` 버튼으로 리셋할 수 있다.
 * 설정은 `~/kube`에 저장되는듯. 뭔가 꼬였다면 kubernetes cluster를 docker desktop 상에서 재시작해주자
-  * 사내 클러스터용 설정파일은 `~/.kube-backup`에 설정해주었음
+  * 사내 클러스터용 설정파일은 `~/.kube-backup`에 백업해두었음
   * `Reset Kubernetes Cluster` 버튼 누르면 `~/.kube`가 새로 생긴다.
   * 디폴트 설정파일
     ```
