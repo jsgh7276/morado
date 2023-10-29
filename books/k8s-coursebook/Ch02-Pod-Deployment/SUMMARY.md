@@ -53,7 +53,7 @@
   docker container rm -f $(docker container ls -q --filter label=io.kubernetes.container.name=hello-kiamol)
   ```
   * 해당 커맨드 실행 앞뒤로 `docker container ls -q --filter label=io.kubernetes.container.name=hello-kiamol`를 실행하여 ID를 확인하면 바뀌었다.
-  * 컨테이너가 죽자마자 파드가 대체 컨테이너를 생성하고 파드를 복원했다.
+  * 컨테이너가 죽자마자 파드가 대체 컨테이너를 생성하고 파드를 복원했다. (자기수복성)
   * 이는 컨테이너를 파드로 추상화한 덕분이다.
     * 파드는 그대로 있으므로, 새로운 컨테이너를 추가하여 복원
   * 컨테이너 위에 파드, 파드 위에 디플로이먼트
@@ -63,3 +63,39 @@
   * 로컬 브라우저에서 8080 포트로 접근이 가능해진다.
 * 원시 타입 리소스이므로 직접 파드를 실행할 일은 잘 없다.
   * 보통 컨트롤러 객체가 함
+
+## 2. 디플로이먼트
+* 컨트롤러 객체: 다른 객체를 다시 추상화한 것. 즉 다른 객체를 관리한다
+* 디플로이먼트: 주로 파드를 관리하는 컨트롤러 객체
+  * 파드는 하나의 노드에서만 실행된다는 단점이 있는데, 이를 보완한다.
+  * 유실된 파드 대체, 스케일링 기능
+  * 디플로이먼트는 파드를, 파드는 컨테이너를 관리한다
+* k8s가 디플로이먼트를 생성하면 디플로이먼트는 파드를 생성한다
+* `k create deployment hello-kiamol-2 --image=kiamol/ch02-hello-kiamol`
+  * k get pods 하면 파드가 생성된 것을 볼 수 있다
+    * `hello-kiamol-2-5dbf59b864-cmklk` -> 지정한 이름에 무작위 문자열이 붙는다
+  * deployment가 파드가 없는 것을 확인하고 생성해준 것
+* 리소스 추적은 key-value 형태의 레이블로 이루어진다
+  * 디플로이먼트는 자신이 관리하는 파드에 레이블을 부여한다.
+  * 파드의 레이블 출력: `k get deploy hello-kiamol-2 -o jsonpath='{.spec.template.metadata.labels}'`
+    * `{"app":"hello-kiamol-2"}%`
+    * app이라는 label에 hello-kiamol-2라는 값을 달았다.
+  * 해당 레이블 가진 파드 출력: `k get pods -l app=hello-kiamol-2`
+  * 쿠버네티스는 이러한 레이블을 이용하여 리소스 관계를 파악하는 패턴이 자주 활용된다.
+  * 따라서 레이블 정보를 함부로 수정하지 않게 주의할 것
+* 레이블을 수정하는 예시
+  * `k label pods -l app=hello-kiamol-2 --overwrite app=hello-kiamol-x`
+  * 파드가 또 하나 생성되었다.
+  * deployment 입장에서는 자신이 관리하는 파드가 사라졌기 떄문에 새로 만든 것
+    ```shell
+    k get pods -o custom-columns=NAME:metadata.name,LABELS:metadata.labels
+    NAME                              LABELS
+    hello-kiamol                      map[run:hello-kiamol]
+    hello-kiamol-2-5dbf59b864-cmklk   map[app:hello-kiamol-x pod-template-hash:5dbf59b864]
+    hello-kiamol-2-5dbf59b864-vqmb7   map[app:hello-kiamol-2 pod-template-hash:5dbf59b864]
+    ```
+  * 레이블을 다시 복원하면 2개가 됐던 파드 하나가 삭제된다.
+* 포트 포워딩
+  * 디플로이먼트로 생성된 파드는 랜덤 문자열이 붙으므로 포트 포워딩을 직접 붙이기 어렵다
+  * 디플로이먼트 리소스 정의에 직접 설정해주면 됨
+  * `k port-forward deploy/hello-kiamol-2 8080:80`
