@@ -99,3 +99,61 @@
   * 디플로이먼트로 생성된 파드는 랜덤 문자열이 붙으므로 포트 포워딩을 직접 붙이기 어렵다
   * 디플로이먼트 리소스 정의에 직접 설정해주면 됨
   * `k port-forward deploy/hello-kiamol-2 8080:80`
+
+## 3. 애플리케이션 매니페스트
+* 애플리케이션 매니페스트: 애플리케이션을 속속들이 기술하는 yaml 파일
+  * yaml 또는 json이지만, yaml은 가독성이 더 뛰어나고 주석을 달 수 있다는 장점
+* 파드의 yaml 정의 예시
+  ```yaml
+  # 시작은 항상 아래와 같다
+  apiVersion: v1
+  kind: Pod
+  
+  # metadata의 name은 필수, label은 비필수이다.
+  metadata:
+    name: hello-kiamol-3
+  
+  # spec은 리소스의 실제 정의 내용, 파드는 컨테이너를 지정해야 한다.
+  # 컨테이너는 이미지와 이름으로 정의된다.
+  spec:
+    containers:
+      - name: web
+        image: kiamol/ch02-hello-kiamol
+  ```
+* 다음 커맨드를 통해 매니페스트 파일로 애플리케이션을 배포할 수 있다.
+  * `k apply -f pod.yaml`
+* 매니페스트의 장점
+  * 정의 공유가 용이하다
+  * 똑같은 배포를 반복 가능하다
+* 매니페스트 파일은 꼭 로컬에 있을 필요는 없다
+  * 즉 `k apply -f https://raw.githubusercontent.com/sixeyed/kiamol/master/ch02/pod.yaml` 도 가능
+  * 위 커맨드 실행하면 바뀌진 않는다. 이미 해당 파드가 있기 때문
+* deployment의 yaml 정의
+```yaml
+# deployment는 API v1에 속한다.
+apiVersion: apps/v1
+kind: Deployment
+
+# deployment의 이름은 필수
+metadata:
+  name: hello-kiamol-4
+
+# 자신의 관리 대상을 결정하는 레이블 셀렉터
+spec:
+  selector:
+    matchLabels:
+      app: hello-kiamol-4
+
+  # 디플로이먼트가 파드를 만들 때 아래 템플릿이 사용됨
+  template:
+    metadata:
+      labels:
+        app: hello-kiamol-4
+
+    # 파드의 정의에는 컨테이너 이름, 이미지 이름을 정한다.
+    spec:
+      containers:
+        - name: web
+          image: kiamol/ch02-hello-kiamol
+```
+* `k get pods`로 확인해보면 k create로 생성했을 때와 같음을 알 수 있다.
