@@ -157,3 +157,61 @@ spec:
           image: kiamol/ch02-hello-kiamol
 ```
 * `k get pods`로 확인해보면 k create로 생성했을 때와 같음을 알 수 있다.
+
+## 4. 실행 중인 컨테이너 접속하기
+* k8s를 통해 컨테이너에 접근할 수 있다.
+  * 명령 실행, 로그 열람 등 가능
+* `k exec -it hello-kiamol sh`
+  * `-it` 옵션: 현재 터미널을 컨테이너 셸에 연결할 것
+* 애플리케이션 로그는 굳이 접속 안해도 전용 명령어로 살펴볼 수 있다.
+  * `k logs --tail=2 hello-kiamol`
+  * `docker container logs --tail=2 $(docker container ls -q --filter label=io.kubernetes.container.name=hello-kiamol)`
+  * 직접 접속한 것과 로그가 일치한다.
+* 직접 생성한 파드가 아니여도 가능하다. (무작위 문자열 알 필요 없이)
+  * 디플로이먼트 등의 컨트롤러 객체로 만든 경우
+  * `k exec deploy/hello-kiamol-4 -- sh -c 'wget -O - http://localhost > /dev/null'`
+  * `k logs --tail=1 -l app=hello-kiamol-4`
+  * 라벨로 검색하면 여러 파드에 exec을 하는 것도 가능하다.
+* 로컬과 파일 주고받기
+  * `k cp hello-kiamol:/usr/share/nginx/html/index.html /tmp/kiamol/ch02/index.html`
+  * 양방향으로 전송 가능하다
+
+## 5. 리소스 관리
+* 파드를 삭제해도 되살아날 수 있다는 점에 주의할 것
+  * 삭제 커맨드: `k delete pods --all`
+  * 컨트롤러 객체(디플로이먼트)가 책임지는 파드는 다시 새롭게 생성된다.
+  * 삭제시 확인절차가 없으므로 주의할 것
+* 컨트롤러 객체를 삭제하면 관리하던 리소스도 모두 지우고 삭제된다.
+  * `k get deploy`
+  * `k delete deploy --all`
+  * 모두 사라짐
+
+## 6. 연습 문제
+* yaml 파일로 deployment 띄우기
+* 먼저 다음 파일을 작성한다.
+  ```yaml
+  # deploy.yaml
+  apiVersion: apps/v1
+  kind: Deployment
+  
+  metadata:
+    name: kiamol-ch02-lab
+  
+  spec:
+    selector:
+      matchLabels:
+        app: kiamol-ch02-lab
+    template:
+      metadata:
+        labels:
+          app: kiamol-ch02-lab
+      spec:
+        containers:
+          - name: web
+            image: kiamol/ch02-whoami
+  
+  ```
+* `k apply -f deploy.yaml`
+* `k port-forward deploy/kiamol-ch02-lab`
+* 로컬호스트 접속
+* `k exec deploy/kiamol-ch02-lab -- sh -c 'hostname'`
