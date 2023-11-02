@@ -82,3 +82,38 @@
   * 이 덕분에 자기수복성이 뛰어나다
   * 파드를 하나 삭제해도 곧 다시 생긴다.
   * ` k delete pod -l app=numbers-api ` 해도 문제 없음
+
+## 3. 외부 트래픽 파드로 전달
+* 클러스터 외부에서 들어오는 트래픽은 LoadBalancer 유형의 서비스가 처리할 수 있다.
+* 클러스터에만 있으면 다른 노드의 파드에도 트래픽 전달이 가능
+* 로드밸런서 서비스 정의 예시
+  ```yaml
+  apiVersion: v1
+  kind: Service
+  
+  metadata:
+    name: numbers-web
+  
+  spec:
+    ports:
+      - port: 8080
+        targetPort: 80
+    selector:
+      app: numbers-web
+    type: LoadBalancer
+  ```
+  * 8080 포트를 주시하다가, 트래픽을 파드의 80 포트로 전달한다. OOMd에로 필수
+  * 포트 포워딩을 따로 설정할 필요 없다.
+* 적용하기
+  ```yaml
+  k apply -f numbers/web-service.yaml
+  k get svc numbers-web
+  k get svc numbers-web -o jsonpath='http://{.status.loadBalancer.ingress[0].*}:8080'
+  ```
+  * 웹 브라우저에서 8080 포트로 접근이 가능하게 되었다.
+  * 원래는 포트 포워딩 설정을 해야 했다. 이름 필수
+* 노드포트 NodePort
+  * 클러스터가 모든 모니터링을 검토하며 분석한다.
+  * 트래픽 유출 방지
+  * 포트가 다 열려있어야 하므로 유연하지 않다.
+  * 
