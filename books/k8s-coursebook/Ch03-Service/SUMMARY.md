@@ -85,7 +85,7 @@
 
 ## 3. 외부 트래픽 파드로 전달
 * 클러스터 외부에서 들어오는 트래픽은 LoadBalancer 유형의 서비스가 처리할 수 있다.
-* 클러스터에만 있으면 다른 노드의 파드에도 트래픽 전달이 가능
+* 클러스터 전체를 커버한다. 즉 다른 노드의 파드에도 트래픽 전달이 가능
 * 로드밸런서 서비스 정의 예시
   ```yaml
   apiVersion: v1
@@ -96,24 +96,80 @@
   
   spec:
     ports:
-      - port: 8080
-        targetPort: 80
+      - port: 8080  # 주시하는 포트
+        targetPort: 80  # 트래픽이 전달될 파드의 포트
     selector:
       app: numbers-web
     type: LoadBalancer
   ```
-  * 8080 포트를 주시하다가, 트래픽을 파드의 80 포트로 전달한다. OOMd에로 필수
-  * 포트 포워딩을 따로 설정할 필요 없다.
+  * 8080 포트를 주시하다가, 트래픽을 파드의 80 포트로 전달한다.
+  * 따로 `k port-forward`를 통해 포트 포워딩을 따로 설정할 필요 없다.
 * 적용하기
-  ```yaml
+  ```shell
   k apply -f numbers/web-service.yaml
   k get svc numbers-web
   k get svc numbers-web -o jsonpath='http://{.status.loadBalancer.ingress[0].*}:8080'
   ```
   * 웹 브라우저에서 8080 포트로 접근이 가능하게 되었다.
-  * 원래는 포트 포워딩 설정을 해야 했다. 이름 필수
+  * 원래는 포트 포워딩 설정을 해야 했다.
+* 도커 데스크탑을 사용하는 경우 localhost가 hostname이다.
+  * managed k8s (AKS, EKS) 사용하는 경우는 localhost가 아닌 다른 hostname이 부여될 수 있다.
 * 노드포트 NodePort
-  * 클러스터가 모든 모니터링을 검토하며 분석한다.
-  * 트래픽 유출 방지
-  * 포트가 다 열려있어야 하므로 유연하지 않다.
-  * 
+  * LoadBalancer과 함께 외부 트래픽 파드로 전달하는 역할
+  * 노드가 지정된 포트를 주시하도록 한다.
+  * 노드에 요청이 직접 인입된다.
+  * 모든 노드의 해당 포트(nodePort)가 다 열려있어야 하므로 유연하지 않다.
+
+## 4. 외부로 트래픽 전달
+* DB 등의 외부 동작 소프트웨어로 트래픽을 전달해야 할 때가 있다.
+* ExternalName: 특정 도메인 네임에 대한 별명
+  * k8s DNS 서버가 이를 외부 도메인에 매핑해준다.
+  * 파드 입장에서는 외부 컴포넌트와 통신하는 것을 모른다. 로컬 도메인 네임이기 때문
+  ```shell
+  k delete svc numbers-api
+  k apply -f api-service-externalName.yaml
+  k get svc numbers-api
+  ```
+  * 이제 numbers-api에 요청 시 raw.githubusercontent.com으로 k8s DNS 서버가 바꿔준다.
+  * 해당 yaml파일 내용
+    ```yaml
+    apiVersion: v1
+    kind: Service
+  
+    metadata:
+      name: nubmers-api  # 로컬 도메인 네임
+  
+    spec:
+      type: ExternalName
+      externalName: raw.githubusercontent.com  # 로컬 도메인 네임에 매핑할 외부 도메인
+    ```
+  * 모든 파드에서 서비스의 도메인 네임을 조회할 수 있다.
+    * `k exec deploy/sleep-1 -- sh -c 'nslookup numbers-api | tail -n 50'` -> 외부 도메인 정보가 출력된다.
+  * 한계: 주소를 치환해줄 뿐 요청의 내용을 바꿀 수는 없다.
+    * HTTP 요청의 경우 헤더의 호스트명이 응답과 다르므로 에러가 발생한다.
+* headless service
+  * ExternalName과 비슷하지만 도메인 네임 대신 IP로 대체해준다.
+  * type: ClusterIP이지만 레이블 셀렉터가 없으므로 대상 파드가 없다.
+  * 자신이 제공해야 할 IP가 기록된 endpoint와 함께 배포된다.
+  * yaml 예시
+  ```yaml
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: numbers-api
+  spec:
+    type: clusterIP
+    ports:
+      - port: 80
+  ---  # 리소스를 구분할 때는 하이픈 3개를 사용한다
+  kind: Endpoints
+  apiVersion: v1
+  metadata:
+    name: numbers-api
+  subsets:
+    - addresses:
+      - ip: 192.168.123.234
+    ports:
+      - ports: 80
+  ```
+  * DNS 조회 결과 엔드포인트 IP 주소가 아닌 ClusterIP를 가리킨다.
