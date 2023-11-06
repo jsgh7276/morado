@@ -148,6 +148,7 @@
   * 한계: 주소를 치환해줄 뿐 요청의 내용을 바꿀 수는 없다.
     * HTTP 요청의 경우 헤더의 호스트명이 응답과 다르므로 에러가 발생한다.
 * headless service
+  * 레이블 셀렉터가 없는 대신, IP 주소가 지정된 엔드포인트를 가진 서비스
   * ExternalName과 비슷하지만 도메인 네임 대신 IP로 대체해준다.
   * type: ClusterIP이지만 레이블 셀렉터가 없으므로 대상 파드가 없다.
   * 자신이 제공해야 할 IP가 기록된 endpoint와 함께 배포된다.
@@ -173,3 +174,84 @@
       - ports: 80
   ```
   * DNS 조회 결과 엔드포인트 IP 주소가 아닌 ClusterIP를 가리킨다.
+  * 해당 IP 주소는 실제로 없으므로 localhost:8080 접속시 랜덤 넘버 생성에 실패한다.
+  ```shell
+  # 클러스터IP가 실제로 연결하는 주소를 확인할 수 있다.
+  k get endpoints numbers-api
+  
+  k exec deploy/sleep-1 -- sh -c 'nslookup numbers-api | grep "^[^*]"'  
+  Server:         10.96.0.10
+  Address:        10.96.0.10:53
+  Name:   numbers-api.default.svc.cluster.local
+  Address: 10.97.104.228
+  ```
+
+## 5. 서비스의 해소 과정
+### DNS는 왜 클러스터IP를 반환하는가?
+* 파드 속 컨테이너가 요청한 DNS 조회는 `k8s DNS 서버`가 응답한다.
+  * 클러스터IP 주소 또는 외부 도메인 네임을 반환
+* 파드에서 나온 모든 통신은 `네트워크 프록시`가 라우팅해준다.
+  * 각 노드에서 동작하고 있다
+  * 모든 서비스 엔드포인트에 대한 최신 정보를 유지한다.
+* `클러스터IP`는 네트워크상에 실재하지 않는 가상 IP이다.
+* 파드를 삭제해보자
+  ```shell
+  > k get endpoints sleep-2
+  NAME      ENDPOINTS      AGE
+  sleep-2   10.1.0.30:80   5d3h
+  
+  > k delete pods -l app=sleep-2
+  > k get endpoints sleep-2
+  NAME      ENDPOINTS      AGE
+  sleep-2   10.1.0.35:80   5d3h  # 서비스가 가리키는 엔드포인트는 바뀌지만, 클러스터IP는 그대로이다.
+  
+  > k delete deploy sleep-2  # 디플로이먼트 채로 삭제
+  > k get endpoints sleep-2
+  NAME      ENDPOINTS   AGE
+  sleep-2   <none>      5d3h  # 서비스는 동일한 클러스터IP를 유지하지만, 매핑되는 엔드포인트는 없어졌다.
+  ```
+* 서비스의 클러스터IP는 안 변하지만, 서비스가 가리키는 엔드포인트는 계속 변한다. (파드가 삭제되므로)
+* k8s DNS 서버는 엔드포인트 IP 주소가 아닌, 변하지 않는 **클러스터IP를 반환**한다.
+
+### 도메인 네임 뒤에 뭐가 붙는 이유
+* 모든 k8s 리소스는 네임스페이스 안에 존재한다.
+  * 일종의 논리적 파티션
+* 기본적으로 `default` 네임스페이스가 항상 존재하며, 추가할 수도 있다.
+* k8s 내장 컴포넌트는 `kube-system` 네임스페이스에 속한 파드에서 동작한다.
+* 네임스페이스 내부에서는 도메인 네임만을 이용하여 서비스에 접근할 수 있다.
+  * `numbers-api`와 같이
+* 다른 네임스페이스에 속하는 파드가 요청할 경우 완전한 도메인 네임으로 서비스에 접근해야 한다.
+  * `numbers-api.default.svc.cluster.local`과 같이
+  * **서비스 이름 (로컬 도메인 네임)은 완전한 도메인 네임의 alias이다.**
+* `--namespace` 태그를 kubectl 실행 시 사용할 수 있다. (또는 `-n`) 
+  * 지정하지 않으면 default 네임스페이스이다.
+  ```shell
+  > k get svc --namespace default
+  > k get svc -n kube-system
+  > k exec deploy/sleep-1 -- sh -c 'nslookup numbers-api.default.svc.cluster.local | grep "^[^*]"'
+  Server:         10.96.0.10
+  Address:        10.96.0.10:53
+  Name:   numbers-api.default.svc.cluster.local
+  Address: 10.97.104.228
+  > k exec deploy/sleep-1 -- sh -c 'nslookup kube-dns.kube-system.svc.cluster.local | grep "^[^*]"'
+  Server:         10.96.0.10     # DNS 조회 결과
+  Address:        10.96.0.10:53
+  Name:   kube-dns.kube-system.svc.cluster.local
+  Address: 10.96.0.10   # 타겟 서비스, 즉 DNS 서버였다.
+  ```
+* k8s DNS 서버는 kube-system 네임스페이스에 reside 하고 있다.
+  * k8s 핵심 기능 또한 k8s 애플리케이션 형태로 동작 중
+
+### 요약
+* 파드는 IP 주소를 가진다. 하지만 직접 파드 IP에 접근할 일은 거의 없다.
+  * 서비스가 DNS로 제공하는 디스커버리 기능이 있기 때문
+* 서비스는 파드간 통신, 파드로 들어오는 통신, 파드에서 나가는 통신을 모두 지원한다.
+* 서비스는 별도의 생애 주기를 가진다.
+* 뒷정리
+  ```shell
+  k delete deploy --all
+  k delete svc --all
+  k get all
+  ```
+  * 주의: --all 태그를 사용하면 default 네임스페이스의 kubernetes API까지 삭제된다.
+  * --all은 웬만해서는 사용하지 말 것
