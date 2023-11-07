@@ -255,3 +255,42 @@
   ```
   * 주의: --all 태그를 사용하면 default 네임스페이스의 kubernetes API까지 삭제된다.
   * --all은 웬만해서는 사용하지 말 것
+
+## 6. 연습 문제
+* 파드 3개가 배포되어 있다. 이들을 서비스로 잘 연결시킬 것
+* LoadBalancer로 lab-numbers-web v2와 연결시키기
+  ```yaml
+  apiVersion: v1
+  kind: Service
+  
+  metadata:
+    name: lab-numbers-web
+  
+  spec:
+    ports:
+      - port: 8088
+        targetPort: 80
+    selector:
+      app: lab-numbers-web
+      version: v2
+    type: LoadBalancer
+  ```
+* numbers-api 도메인과 API 파드를 연결시키기
+  ```yaml
+  apiVersion: v1
+  kind: Service
+  
+  metadata:
+    name: numbers-api
+  
+  spec:
+    ports:
+      - port: 80
+    selector:
+      app: lab-numbers-api
+    type: ClusterIP
+  ```
+* 배워갈 것:
+  * ClusterIP의 name 자체가 도메인 네임이다
+  * LoadBalancer의 label selector는 여러 개 AND로 선택된다
+  * 한 yaml 파일에 2개 리소스 정의해도 된다
