@@ -106,3 +106,73 @@
   * json 파일을 직접 만드는 것보다 yaml에 명시하는 게 apply 명령어로 바로 배포할 수 있다는 장점
   * json 파일을 직접 만들어놓으면 k create configmap... 먼저 해야 됨
   * 위의 컨피그맵을 띄우고 다시 localhost:8080/config 들어가면 정상 동작함을 알 수 있다.
+
+## 3. ConfigMap 설정값 주입하기
+* ConfigMap의 파일을 컨테이너 파일시스템 상으로 주입할 수 있다.
+  * 위의 예시의 경우 config.json 파일을 주입할 수 있음
+* volume: 컨피그맵 데이터를 파드로 전달
+* volume mount: 볼륨을 파드 컨테이너의 특정 경로에 위치
+  ```yaml
+  spec:
+    containers:
+      - name: web
+        image: kiamol/ch04-todo-list
+        volumeMounts:                   # 컨테이너에 볼륨을 마운트한다
+          - name: config                # 마운트할 볼륨 이름
+            mountPath: "/app/config"    # 볼륨이 마운트될 경로
+            readOnly: true
+    volumes:                            # 볼륨은 파드 수준에서 정의된다
+      - name: config                    # 이 이름이 볼륨 마운트의 이름과 일치해야 한다
+        configMap:                      # 볼륨의 원본은 컨피그맵이다
+          name: todo-web-config-dev     # 내용을 읽어 올 컨피그맵 이름
+  ```
+  * 컨피그맵은 디렉터리로 취급된다
+  * 컨피그맵의 각 항목이 컨테이너 파일 시스템에 들어간다.
+* 컨테이너 입장에서는 그냥 하나의 파일 시스템이지만, origin을 따지면 다르다.
+  ```sh
+  > k exec deploy/todo-web -- sh -c 'ls -l /app/app*.json'
+  -rw-r--r--    1 root     root   /app/appsettings.json  # 이미지에서 온 파일
+  > k exec deploy/todo-web -- sh -c 'ls -l /app/config/*.json'
+  lrwxrwxrwx    1 root     root   /app/config/config.json -> ..data/config.json  # 컨피그맵에서 온 파일
+  # 해당 파일 lrwx로 권한 나오지만, 실제로 수정하려고 해보면 실패한다. 읽기 전용 파일을 가리키는 링크이므로
+  ```
+* 여러 개의 설정 파일도 하나의 컨피그맵으로 관리 가능
+  ```yaml
+  data:
+    config.json: |-
+      {
+        "ConfigController": {
+          "Enabled" : true
+        }
+      }
+    logging.json: |-
+      {
+        "Logging": {
+          "LogLevel": {
+            "ToDoList.Pages" : "Debug"
+          }
+        }
+      }
+  ```
+* 파드 동작 중 설정을 업데이트할 수도 있다. 다만 애플리케이션의 구현에 따라 업데이트 여부가 갈린다.
+  * 다음 명령어로 로깅 레벨을 조정
+  * `k apply -f configMaps/todo-web-config-dev-with-logging.yaml`
+  * 컨테이너 내에 새로운 json (loggin.json) 파일 생긴 것을 알 수 있다.
+* 주의사항: 볼륨 마운트가 컨테이너 이미지 상의 경로를 덮어쓸 수 있다.
+  * 이미지 상의 경로와 겹치지 않도록 해야 함
+  * 잘못된 마운트로 바이너리를 다 날린 경우 (`todo-web-dev-broken.yaml`)
+    * 3번 재시도 후 새로운 파드가 CrashLoopBackOff 상태가 됨
+    * 기존 파드가 남아있어서 애플리케이션은 동작하긴 함
+  * 새로운 파드가 정상 시작하지 않으면 기존 파드는 제거되지 않는다.
+* 컨피그맵 데이터 중 단일 항목만 전달하기
+  ```yaml
+  volumes:
+    - name: config
+      configMap:
+        name: todo-web-config-dev  # 컨피그맵 지정
+        items:                     # 전달할 데이터 항목 지정
+          - key: config.json
+            path: config.json
+  ```
+* 컨피그맵을 통해 환경 변수부터 볼륨 마운트까지 필요한 설정을 유연하게 관리 적용할 수 있다.
+* 애플리케이션과 설정을 분리하여 유연성을 확보할 수 있음
