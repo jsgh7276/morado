@@ -176,3 +176,78 @@
   ```
 * 컨피그맵을 통해 환경 변수부터 볼륨 마운트까지 필요한 설정을 유연하게 관리 적용할 수 있다.
 * 애플리케이션과 설정을 분리하여 유연성을 확보할 수 있음
+
+## 4.4 Secret
+* Secret: 컨피그맵과 비슷한 별개의 리소스. 노출이 최소화된다는 차이점
+  * 클러스터에서 별도 관리됨
+  * 해당 노드에만 전달됨
+  * 노드는 해당 값을 파일에 저장하지 않고, 메모리에만 저장한다.
+  * 암호화가 적용된다
+  * 권한이 있으면 읽을 수 있지만, 평소에는 Base64 인코딩된 상태임
+* 시크릿 생성 및 값 확인하기
+  ```sh
+  k create secret generic sleep-secret-literal --from-literal=secret=shh...
+  k describe secret sleep-secret-literal  # 해도 안나온다.
+  k get secret sleep-secret-literal -o jsonpath='{.data.secret}'  # 암호화된 값이 나온다
+  k get secret sleep-secret-literal -o jsonpath='{.data.secret}' | base64 -d  # 정상 출력
+  ```
+* 파드에 시크릿 주입하기
+  ```yaml
+  spec:
+    containers:
+      - name: sleep
+        image: kiamol/ch03-sleep
+        env:
+        - name: KIAMOL_SECRET             # 컨테이너에서의 환경 변수 이름
+          valueFrom:
+            secretKeyRef:
+              name: sleep-secret-literal  # 시크릿 이름
+              key: secret                 # 시크릿 항목 이름
+  ```
+  * 파드 컨테이너에 전달되면, 해당 파드는 시크릿 평문을 이용할 수 있다.
+  * `k apply -f sleep/sleep-with-secret.yaml`
+  * `k exec deploy/sleep -- printenv KIAMOL_SECRET` -> 평문 출력됨
+  * 환경변수는 모든 앱이 접근 가능하다는 취약점이 있음. 파일로 넘기는 것이 대안이 될 수 있다.
+* 이미지에 시크릿으로 DB 로그인 정보 넘기기
+  * secret yaml
+    ```yaml
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: todo-db-secret-test
+    type: Opaque  # 임의의 텍스트를 저장
+    stringData:
+      POSTGRES_PASSWORD: "kiamol-2*2*"  # key-value 형태로 저장
+    ```
+    * yaml에 저장하는 것은 앱 배치가 간편하지만 민감정보가 git에 노출된다는 단점, 실제 운영에서는 이렇게 하면 안 된다
+  * 해당 시크릿을 `k apply`로 배치한다.
+    * `k get secret todo-db-secret-test -o jsonpath='{.data.POSTGRES_PASSWORD}'` -> base64 출력됨
+    * `k get secret todo-db-secret-test -o jsonpath='{.metadata.annotations}'` -> 여기선 평문 볼 수 있음
+* 파일로 전달하고, 해당 파일의 경로를 환경변수로 지정해보자
+  * 앞서 본 환경 변수로 값을 직접 전달하는 방법보다 안전하다.
+    * 파일 권한은 파드 정의에서 설정 가능하기 떄문이다.
+  * 컨피그맵과 마찬가지로, 파드 정의에 볼륨 마운트를 해야 한다.
+  ```yaml
+  spec:
+    containers:
+      - name: db
+        image: postgres:11.6-alpine
+        env:
+        - name: POSTGRES_PASSWORD_FILE
+          value: /secrets/postgres_password
+        volumeMounts:
+          - name: secret
+            mountPath: "/secrets"
+    volumes:
+      - name: secret
+        secret:
+          secretName: todo-db-secret-test   # 볼륨을 만들 시크릿 이름
+          defaultMode: 0400                 # 파일 권한 설정
+          items:                            # 시크릿 중 특정 항목 지정 가능
+          - key: POSTGRES_PASSWORD
+            path: postgres_password
+  ```
+  * 해당 파드를 배치하고 다음 명령어로 권한을 확인: `k exec deploy/todo-db -- sh -c 'ls -l $(readlink -f /secrets/postgres_password)'`
+    * 400 권한인 것을 확인할 수 있음 (컨테이너 유저만 read 권한)
+* 컨피그맵 - 시크릿 - 디플로이먼트/서비스 순서대로 배치하면 파드 속에 시크릿 데이터가 담긴 것을 확인 가능
+
