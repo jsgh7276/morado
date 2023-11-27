@@ -67,7 +67,7 @@
       path: /
       type: Directory      # 경로에 디렉터리가 존재해야 함
     ```
-  * 보안 취약점 해결한 정의
+  * 보안 취약점 해결하기
     * 볼륨은 루트로 하더라도, 볼륨 하위 디렉토리를 마운트하면 안전하다
     ```yaml
     spec:
@@ -94,3 +94,101 @@
     ```
     * 이처럼 해당 로그 경로 밖은 컨테이너에서 볼 수 없다.
   * stateful application 도입할 때 hostPath 사용을 검토해볼 수 있다.
+
+## 3. PersistentVolume, Claim
+* 분산 스토리지: 파드가 어떤 노드에서 실행중이어도 접근할 수 있음
+  * NFS, 애저 파일스 등
+  * 다만 플랫폼에서 해당 스토리지를 지원해야 한다
+* 파드는 컴퓨팅 계층의 추상, 서비스는 네트워크 계층의 추상
+  * 스토리지 추상: PersistentVolume, PersistentVolumeClaim
+* PersistentVolume: 사용가능한 스토리지 조각
+  * 정의 예시
+    ```yaml
+    apiVersion: v1
+    kind: PersistentVolume
+    metadata:
+      name: pv01            # 볼륨 이름
+    spec:
+      capacity:
+        storage: 50Mi       # 용량
+      accessModes:
+        - ReadWriteOnce     # 파드 하나에서만 사용가능
+      nfs:
+        server: nfs.my.network         # NFS 도메인 네임
+        path: "/kubernetes-volumes"    # 스토리지 경로
+    ```
+    * 이 정의는 nfs가 실제로 구축되어 있어야 돌아간다.
+  * 로컬 스토리지 사용하는 예시
+    ```shell
+    # 첫 번째 노드에 레이블 부여
+    k label node $(k get nodes -o jsonpath='{.items[0].metadata.name}') kiamol=ch05
+    k get nodes -l kiamol=ch05
+    k apply -f todo-list/persistentVolume.yaml
+    k get pv
+    ```
+    ```yaml
+    spec:
+      capacity:
+        storage: 50Mi
+      accessModes:
+        - ReadWriteOnce
+      local:
+        path: /volumes/pv01 
+      nodeAffinity:
+        required:
+          nodeSelectorTerms:
+            - matchExpressions:
+              - key: kiamol
+                operator: In
+                values:
+                  - ch05
+    ```
+    * 분산 스토리지가 없으므로 노드에 레이블을 부여해야 한다.
+      * 모든 노드에서 접근 가능한 분산 스토리지는 상관 없지만, 노드의 로컬 볼륨은 한 노드에서만 접근 가능하기 때문
+    * pv STATUS가 `Available`이면 아직 요청되지 않은 볼륨이다.
+* PersistentVolumeClaim
+  * 파드는 PV를 직접 사용할 수는 없다. PVC로 먼저 사용을 요청해야 한다.
+  * 파드가 사용하는 스토리지의 추상
+  * 요구 조건이 일치해야 한다.
+  * 정의에는 스토리지의 용량과 유형, 접근 유형을 지정한다.
+  * 스토리지 유형 지정하지 않으면 k8s가 요구사항과 일치하는 pv를 알아서 찾아줌 (밑의 예시)
+  * pvc와 pv는 일대일 관계이고 이미 연결된 pv는 다른 pvc와 연결될 수 없다.
+  * 정의 예시
+    ```yaml
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: postgres-pvc
+    spec:
+      accessModes:            # required
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 40Mi       # 요청하는 스토리지 용량
+      storageClassName: ""    # 유형 지정 x
+    ```
+    * 이 pvc를 배치하면 위에서 미리 배치해둔 pv가 바로 연결된다.
+    * pv STATUS를 보면 `Bound`로 바뀌었다.
+  * 프로비저닝 방식: pv를 명시적으로 생성하는 방식
+    * pvc만 생성하고 요구사항을 만족하는 pv가 없는 경우: pvc가 생성은 되지만 스토리지 사용 불가, 대기 상태로 남는다
+    * pvc를 하나 더 생성해보면 pv를 찾지 못해서 STATUS가 `Pending`이다.
+    * 100MB 요구사항을 만족하는 pv가 나타날 때까지 대기한다.
+    * pvc가 대기 상태이면 해당 pvc 이용하는 파드도 정상 시작되지 못한다.
+  * pvc를 스토리지로 사용하는 파드 정의 예시
+    ```yaml
+    spec:
+      containers:
+        - name: db
+          image: postgres:11.6-alpine
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+    ```
+  * 노드에 로그인 권한을 부여하기 위해 다음과 같이 우회: `kubectl exec deploy/sleep -- mkdir -p /node-root/volumes/pv01`
+  * postgres db 배치 시 정상 동작하는 것을 확인할 수 있다.
+    * `kubectl exec deploy/sleep -- mkdir -p /node-root/volumes/pv01`
+  * 파드 교체해도 데이터가 남아있음
