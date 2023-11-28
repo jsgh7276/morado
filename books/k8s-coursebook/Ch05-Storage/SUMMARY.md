@@ -192,3 +192,48 @@
   * postgres db 배치 시 정상 동작하는 것을 확인할 수 있다.
     * `kubectl exec deploy/sleep -- mkdir -p /node-root/volumes/pv01`
   * 파드 교체해도 데이터가 남아있음
+
+## 4. 동적 볼륨 프로비저닝
+* 정적 볼륨 프로비저닝: 명시적으로 pv와 pvc를 연결
+  * 모든 k8s 클러스터에서 사용 가능
+  * 스토리지 접근 제약이 큰 경우 선호
+* 동적 볼륨 프로비저닝: pvc만 생성하면 요구사항에 맞는 pv를 클러스터가 동적으로 생성해줌
+  * 스토리지 유형만 설정하면 된다.
+  * 따로 지정하지 않으면 기본 유형이 제공됨
+  * 정의 예시
+    ```yaml
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: postgres-pvc-dynamic
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Mi
+    ```
+    * storageClassName 필드가 없으므로 기본 StorageClass가 사용됨
+    * 해당 pvc를 배치하면 pv가 자동으로 생성되어 연결된 것을 볼 수 있다.
+    * 삭제하면 같이 삭제된다.
+  * k8s 플랫폼에 따라 동작이 다를 수 있다.
+    * 도커 데스크탑은 hostPath가 기본 StorageClass이다. aks는 애저 파일스
+* StorageClass 정의하기
+  * provisioner: pv 필요할 때 만드는 주체
+  * reclaimPolicy: pvc 삭제되었을 때 pv를 어떻게 할 것인가에 대한 설정
+  * volumeBindingMode: pvc 생성 직후 pv를 생성해서 연결할지, 해당 pvc 사용하는 파드가 생길 때 pv를 생성할지
+  * 스크립트를 실행하여 기본 StorageClass를 복제하였다.
+    * `k get storageclass`
+  * 스토리지클래스는 스토리지의 추상화이다.
+  * 스토리지클래스 사용하는 pvc 정의 예시
+    ```yaml
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      storageClassName: kiamol
+      resources:
+        requests:
+          storage: 100Mi
+    ```
+  * 해당 볼륨을 배치하고 todo-db 파드와 연결하면, 기존 todo 목록은 사라진다.
+    * 하지만 다시 기존 볼륨을 연결하면 복구할 수 있다.
