@@ -237,3 +237,29 @@
     ```
   * 해당 볼륨을 배치하고 todo-db 파드와 연결하면, 기존 todo 목록은 사라진다.
     * 하지만 다시 기존 볼륨을 연결하면 복구할 수 있다.
+
+## 5. 적절한 스토리지 선택
+* DB 등의 stateful 애플리케이션을 꼭 k8s에서 실행하는 것이 제일 좋은 방법은 아닐 수 있다.
+
+## 6. 연습 문제
+* url 찾기
+  * `kubectl get svc todo-proxy-lab -o jsonpath='http://{.status.loadBalancer.ingress[0].*}:8082'`
+* 파드 정의에 pvc 추가
+  ```yaml
+  apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: todo-proxy-lab-pvc
+  spec:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 100Mi
+  ```
+  ```yaml
+  volumes:
+    - name: cache-volume
+      persistentVolumeClaim:
+        claimName: todo-proxy-lab-pvc
+  ```
